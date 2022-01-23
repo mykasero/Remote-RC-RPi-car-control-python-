@@ -191,7 +191,7 @@ def Pomiar(DHTmode):
 def Clean():
 	GPIO.cleanup()
 
-##########################
+##########################Key Reading#######
 
 def key_input(event):
     print ('Key:', event.char)
@@ -248,4 +248,3 @@ command.mainloop()
 
 
 
-5+
