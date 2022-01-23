@@ -1,0 +1,251 @@
+from time import sleep
+import RPi.GPIO as GPIO
+import sys
+import tkinter as tk
+import Adafruit_DHT
+
+####settings#####
+
+GPIO.setmode(GPIO.BOARD)
+GPIO.setwarnings(False);
+
+pwmFreq=100
+pwmLedFreq=1
+GPIO.setup(12, GPIO.OUT)    # PWMA
+GPIO.setup(18, GPIO.OUT)    # AIN2
+GPIO.setup(37, GPIO.OUT)    # AIN1
+GPIO.setup(22, GPIO.OUT)    # STBY
+GPIO.setup(15, GPIO.OUT)    # BIN1
+GPIO.setup(13, GPIO.OUT)    # BIN2
+GPIO.setup(11, GPIO.OUT)    # PWMB
+GPIO.setup(36, GPIO.OUT,initial=GPIO.LOW) #Led_Rev
+GPIO.setup(38, GPIO.OUT,initial=GPIO.LOW) #Led_Front
+GPIO.setup(32,GPIO.OUT,initial=GPIO.LOW) #Led_blinker_Right
+GPIO.setup(40,GPIO.OUT,initial=GPIO.LOW) #Led_blinker_Left
+
+pwma = GPIO.PWM(12, pwmFreq)
+pwmb = GPIO.PWM(11, pwmFreq)
+pwmLed_L= GPIO.PWM(40, pwmLedFreq)
+pwmLed_R= GPIO.PWM(32, pwmLedFreq)
+pwma.start(0)
+pwmb.start(0)
+pwmLed_L.start(0)
+pwmLed_R.start(0)
+
+#####functions#####
+
+FR_x=True
+FL_x=True
+def stop():
+	GPIO.output(13,GPIO.LOW)
+	GPIO.output(15,GPIO.LOW)
+	GPIO.output(37,GPIO.LOW)
+	GPIO.output(18,GPIO.LOW)
+	GPIO.output(36,GPIO.LOW)
+	GPIO.output(40,GPIO.LOW)
+	GPIO.output(32,GPIO.LOW)
+	pwmLed_L.ChangeDutyCycle(0)
+	pwmLed_R.ChangeDutyCycle(0)
+	FL_x = False
+	FR_x = False
+
+def blinker_L(Mode,Led):
+	if(Mode==1):
+		pwmLed_L.ChangeDutyCycle(Led)
+	if(Mode==0 or FL_x == False):
+		pwmLed_L.ChangeDutyCycle(0)
+
+def blinker_R(Mode,Led):
+	if(Mode==1):
+		pwmLed_R.ChangeDutyCycle(Led)
+	if(Mode==0 or FR_x==False):
+		pwmLed_R.ChangeDutyCycle(0)
+
+def turnR(pwr,st):
+	FR_x=True
+	if(pwr==1):
+		GPIO.output(18, GPIO.LOW) #AIN2
+		GPIO.output(37,GPIO.HIGH) #AIN1
+		pwma.ChangeDutyCycle(st)
+		blinker_R(1,50)
+		blinker_L(0,50)
+		return FR_x
+	if(pwr==0):
+		FR_x=False
+		return FR_x
+
+def forward(spd):
+	GPIO.output(15,GPIO.HIGH) #BIN1
+	GPIO.output(13,GPIO.LOW) #BIN2
+	pwmb.ChangeDutyCycle(spd)
+	blinker_R(0,50)
+	blinker_L(0,50)
+
+def forwardL(pwr,spd,st):
+	FL_x=True 
+	if(pwr==1):
+		GPIO.output(15,GPIO.HIGH) #BIN1
+		GPIO.output(13,GPIO.LOW)
+		GPIO.output(18, GPIO.HIGH) #AIN2
+		GPIO.output(37,GPIO.LOW) #AIN1
+		pwmb.ChangeDutyCycle(spd)
+		pwma.ChangeDutyCycle(st)
+		blinker_L(1,50)
+		blinker_R(0,50)
+		return FL_x
+	if pwr==0:
+		FL_x=False
+		return FL_x
+
+def forwardR(pwr,spd,st):
+	FR_x=True
+	if(pwr==1):
+		GPIO.output(15,GPIO.HIGH) #BIN1
+		GPIO.output(13,GPIO.LOW)
+		GPIO.output(18, GPIO.LOW) #AIN2
+		GPIO.output(37,GPIO.HIGH) #AIN1
+		pwmb.ChangeDutyCycle(spd)
+		pwma.ChangeDutyCycle(st)
+		blinker_R(1,50)
+		blinker_L(0,50)
+		return FR_x
+	if(pwr==0):
+		FR_x=False
+		return FR_x
+
+def turnL(pwr,st):
+	FL_x=True
+	if(pwr==1):
+		GPIO.output(18, GPIO.HIGH) #AIN2
+		GPIO.output(37,GPIO.LOW) #AIN1
+		pwma.ChangeDutyCycle(st)
+		blinker_L(1,50)
+		blinker_R(0,50)
+	if(pwr==0):
+		FL_x=False
+		return FL_x
+	
+def reverse(spd):
+	GPIO.output(15,GPIO.LOW) #BIN1
+	GPIO.output(13,GPIO.HIGH) #BIN2
+	GPIO.output(36,GPIO.HIGH)
+	pwmb.ChangeDutyCycle(spd)
+	blinker_L(0,50)
+	blinker_R(0,50)
+
+def reverseL(pwr,spd,st):
+	FL_x=True
+	if(pwr==1):
+		GPIO.output(15,GPIO.LOW) #BIN1
+		GPIO.output(13,GPIO.HIGH)
+		GPIO.output(18, GPIO.HIGH) #AIN2
+		GPIO.output(37,GPIO.LOW) #AIN1
+		GPIO.output(36,GPIO.HIGH)
+		pwmb.ChangeDutyCycle(spd)
+		pwma.ChangeDutyCycle(st)
+		blinker_L(1,50)
+		blinker_R(0,50)
+		return FL_x
+	if(pwr==0):
+		GPIO.output(36,GPIO.LOW)
+		FL_x=False
+		return FL_x
+
+def reverseR(pwr,spd,st):
+	FR_x=True
+	if(pwr==1):
+		GPIO.output(15,GPIO.LOW) #BIN1
+		GPIO.output(13,GPIO.HIGH)
+		GPIO.output(18, GPIO.LOW) #AIN2
+		GPIO.output(37,GPIO.HIGH) #AIN1
+		GPIO.output(36,GPIO.HIGH)
+		pwmb.ChangeDutyCycle(spd)
+		pwma.ChangeDutyCycle(st)
+		blinker_R(1,50)
+		blinker_L(0,50)
+		return FR_x
+	if(pwr==0):
+		FR_x=False
+		return FR_x
+
+def Power(Pmode):
+	if(Pmode==0):
+		GPIO.output(22,GPIO.LOW)
+		GPIO.output(38,GPIO.LOW)
+		DHTmode=False
+		return DHTmode
+	elif(Pmode==1): 
+		GPIO.output(22,GPIO.HIGH) # STBY
+		GPIO.output(38,GPIO.HIGH)
+		DHTmode=True
+		return DHTmode
+
+def Pomiar(DHTmode):
+    if(DHTmode==1):
+        wilgoc, temp = Adafruit_DHT.read(11,4)
+        if wilgoc and temp is not None:
+            print('Temp: {} C  Humidity: {} %'.format(temp, wilgoc))
+        else:
+            print('Nie udalo sie wykonac pomiaru')
+        
+def Clean():
+	GPIO.cleanup()
+
+##########################
+
+def key_input(event):
+    print ('Key:', event.char)
+    key_press=event.char
+
+    if ord(event.char) == 27:
+        gpio.cleanup()
+        exit()
+
+    if   key_press.lower() == 'w': forward(40)
+    elif key_press.lower() == 's': reverse(40)
+    elif key_press.lower() == 'a': turnL(1,100)
+    elif key_press.lower() == 'd': turnR(1,100)
+    elif key_press.lower() == 'q':
+        forwardL(1,40,100)
+        blinker_L(1,75)
+    elif key_press.lower() == 't':
+        blinker_L(1,50)
+    elif key_press.lower() == 'g':
+        blinker_L(0,50)
+    elif key_press.lower() == 'y':
+        blinker_R(1,50)
+    elif key_press.lower() == 'h':
+        blinker_R(0,50)
+    elif key_press.lower() == 'e':
+        forwardR(1,40,100)
+        blinker_R(1,50)
+    elif key_press.lower() == 'c':
+        reverseR(1,40,100)
+        blinker_R(1,50)
+    elif key_press.lower() == 'z':
+        reverseL(1,40,100)
+        blinker_L(1,50)
+    elif key_press.lower() == 'o':
+        Power(0)
+    elif key_press.lower() == 'p':
+        Power(1)
+    elif key_press.lower() == 'b':
+        Pomiar(1)
+    elif key_press.lower() == 'i': Clean()
+    elif key_press.lower() == 'x': exit()
+    else:
+        pass
+
+def key_release(event):
+    stop()
+
+
+command = tk.Tk()
+command.bind('<KeyPress>',key_input)
+command.bind('<KeyRelease>', key_release)
+command.mainloop()
+
+
+
+
+5+
