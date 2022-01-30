@@ -1,0 +1,461 @@
+from flask import Flask, request, redirect, url_for, render_template, json, render_template_string, jsonify
+from time import sleep
+import RPi.GPIO as GPIO
+import sys
+import Adafruit_DHT
+import psycopg2
+
+GPIO.setmode(GPIO.BOARD)
+GPIO.setwarnings(False);
+
+pwmFreq=100
+pwmLedFreq=1
+GPIO.setup(12, GPIO.OUT)    # PWMA
+GPIO.setup(18, GPIO.OUT)    # AIN2
+GPIO.setup(37, GPIO.OUT)    # AIN1
+GPIO.setup(22, GPIO.OUT)    # STBY
+GPIO.setup(15, GPIO.OUT)    # BIN1
+GPIO.setup(13, GPIO.OUT)    # BIN2
+GPIO.setup(11, GPIO.OUT)    # PWMB
+GPIO.setup(36, GPIO.OUT,initial=GPIO.LOW) #Led_Rev
+GPIO.setup(38, GPIO.OUT,initial=GPIO.LOW) #Led_Front
+GPIO.setup(32,GPIO.OUT,initial=GPIO.LOW) #Led_blinker_Right
+GPIO.setup(40,GPIO.OUT,initial=GPIO.LOW) #Led_blinker_Left
+
+pwma = GPIO.PWM(12, pwmFreq)
+pwmb = GPIO.PWM(11, pwmFreq)
+pwmLed_L= GPIO.PWM(40, pwmLedFreq)
+pwmLed_R= GPIO.PWM(32, pwmLedFreq)
+pwma.start(0)
+pwmb.start(0)
+pwmLed_L.start(0)
+pwmLed_R.start(0)
+
+####Wykonanie pomiaru wilgosci i temperatury oraz wyslanie informacji do bazy danych######
+def Pomiar(DHTmode):
+    if(DHTmode==1):
+        wilgotnosc,temperatura = Adafruit_DHT.read(11,4)
+        if wilgotnosc and temperatura is not None:
+            print('Temp: {} C  Humidity: {} %'.format(temperatura, wilgotnosc))
+            insert = ("""INSERT INTO Pomiary(temperatura,wilgotnosc_w_procentach)
+            VALUES({:.0f},{:.0f});""".format(temperatura,wilgotnosc))
+            DATABASE_HOST='abul.db.elephantsql.com';
+            DATABASE_USER='pyxhgmxw';
+            DATABASE_PASSWORD='AUUd8DhC1jNVoVI-WrDEPMnK4-0zp8hv';
+            DATABASE_NAME='pyxhgmxw';
+
+            conn = psycopg2.connect(
+                dbname=DATABASE_NAME,
+                user=DATABASE_USER,
+                host=DATABASE_HOST,
+                password=DATABASE_PASSWORD
+            )
+            cur=conn.cursor()
+            cur.execute(insert)
+            conn.commit()
+            print("Record inserted successfully")
+            conn.close()
+        else:
+            print('Nie udalo sie wykonac pomiaru')
+
+#########Awaryjne zatrzymanie#########
+def Awaryjny_stop():
+	GPIO.output(13,GPIO.LOW)
+	GPIO.output(15,GPIO.LOW)
+	GPIO.output(37,GPIO.LOW)
+	GPIO.output(18,GPIO.LOW)
+	GPIO.output(36,GPIO.LOW)
+	GPIO.output(40,GPIO.LOW)
+	GPIO.output(32,GPIO.LOW)
+	GPIO.output(38,GPIO.LOW)
+	pwmLed_L.ChangeDutyCycle(0)
+	pwmLed_R.ChangeDutyCycle(0)
+
+########Sterowanie i kontrola LED#########
+def blinker_L(Mode,Led):
+	if(Mode==1):
+		pwmLed_L.ChangeDutyCycle(Led)
+	if(Mode==0):
+		pwmLed_L.ChangeDutyCycle(0)
+
+def blinker_R(Mode,Led):
+	if(Mode==1):
+		pwmLed_R.ChangeDutyCycle(Led)
+	if(Mode==0):
+		pwmLed_R.ChangeDutyCycle(0)
+
+def turnR(pwr,st):
+    if(pwr==1):
+        GPIO.output(18, GPIO.LOW) #AIN2
+        GPIO.output(37,GPIO.HIGH) #AIN1
+        GPIO.output(36,GPIO.LOW)
+        pwma.ChangeDutyCycle(st)
+        if(st<10):
+            blinker_R(0,50)
+            blinker_L(0,50)
+        elif(st>10):
+            blinker_R(1,50)
+            blinker_L(0,50)
+    elif(pwr==0):
+        GPIO.output(18, GPIO.LOW) #AIN2
+        GPIO.output(37,GPIO.LOW) #AIN1
+        pwma.ChangeDutyCycle(0)
+        blinker_R(0,50)
+        blinker_L(0,50)
+def forward(pwr,spd):
+    if(pwr==1):
+        GPIO.output(15,GPIO.HIGH) #BIN1
+        GPIO.output(13,GPIO.LOW) #BIN2
+        GPIO.output(36,GPIO.LOW)
+        pwmb.ChangeDutyCycle(spd)
+        blinker_R(0,50)
+        blinker_L(0,50)
+    elif(pwr==0):
+        GPIO.output(15,GPIO.LOW) #BIN1
+        GPIO.output(13,GPIO.LOW) #BIN2
+        pwmb.ChangeDutyCycle(0)
+        blinker_R(0,50)
+        blinker_L(0,50)
+def forwardL(pwr,spd,st):
+    if(pwr==1):
+        GPIO.output(15,GPIO.HIGH) #BIN1
+        GPIO.output(13,GPIO.LOW)
+        GPIO.output(18, GPIO.HIGH) #AIN2
+        GPIO.output(37,GPIO.LOW) #AIN1
+        GPIO.output(36,GPIO.LOW)
+        pwmb.ChangeDutyCycle(spd)
+        pwma.ChangeDutyCycle(st)
+        if(st<10):
+            blinker_R(0,50)
+            blinker_L(0,50)
+        elif(st>10):
+            blinker_R(0,50)
+            blinker_L(1,50)
+    elif(pwr==0):
+        GPIO.output(15,GPIO.LOW)
+        GPIO.output(13,GPIO.LOW)
+        GPIO.output(18, GPIO.LOW) #AIN2
+        GPIO.output(37,GPIO.LOW) #AIN1
+        pwmb.ChangeDutyCycle(0)
+        pwma.ChangeDutyCycle(0)
+        blinker_L(0,50)
+        blinker_R(0,50)
+def forwardR(pwr,spd,st):
+    if(pwr==1):
+        GPIO.output(15,GPIO.HIGH) #BIN1
+        GPIO.output(13,GPIO.LOW)
+        GPIO.output(18, GPIO.LOW) #AIN2
+        GPIO.output(37,GPIO.HIGH) #AIN1
+        GPIO.output(36,GPIO.LOW)
+        pwmb.ChangeDutyCycle(spd)
+        pwma.ChangeDutyCycle(st)
+        if(st<10):
+            blinker_R(0,50)
+            blinker_L(0,50)
+        elif(st>10):
+            blinker_R(1,50)
+            blinker_L(0,50)
+    elif(pwr==0):
+        GPIO.output(15,GPIO.LOW) #BIN1
+        GPIO.output(13,GPIO.LOW)
+        GPIO.output(18, GPIO.LOW) #AIN2
+        GPIO.output(37,GPIO.LOW) #AIN1
+        pwmb.ChangeDutyCycle(0)
+        pwma.ChangeDutyCycle(0)
+        blinker_R(0,50)
+        blinker_L(0,50)
+def turnL(pwr,st):
+    if(pwr==1):
+        GPIO.output(18, GPIO.HIGH) #AIN2
+        GPIO.output(37,GPIO.LOW) #AIN1
+        GPIO.output(36,GPIO.LOW)
+        pwma.ChangeDutyCycle(st)
+        if(st<10):
+            blinker_L(0,50)
+            blinker_R(0,50)
+        elif(st>10):
+            blinker_L(1,50)
+            blinker_R(0,50)
+    elif(pwr==0):
+        GPIO.output(18, GPIO.LOW) #AIN2
+        GPIO.output(37,GPIO.LOW) #AIN1
+        pwma.ChangeDutyCycle(0)
+        blinker_L(0,50)
+        blinker_R(0,50)
+
+def reverse(pwr,spd):
+    if(pwr==1):
+        GPIO.output(15,GPIO.LOW) #BIN1
+        GPIO.output(13,GPIO.HIGH) #BIN2
+        GPIO.output(36,GPIO.HIGH)
+        pwmb.ChangeDutyCycle(spd)
+        blinker_L(0,50)
+        blinker_R(0,50)
+    elif(pwr==0):
+        GPIO.output(15,GPIO.LOW) #BIN1
+        GPIO.output(13,GPIO.LOW) #BIN2
+        GPIO.output(36,GPIO.LOW)
+        pwmb.ChangeDutyCycle(0)
+        blinker_L(0,50)
+        blinker_R(0,50)
+
+def reverseL(pwr,spd,st):
+    if(pwr==1):
+        GPIO.output(15,GPIO.LOW) #BIN1
+        GPIO.output(13,GPIO.HIGH)
+        GPIO.output(18, GPIO.HIGH) #AIN2
+        GPIO.output(37,GPIO.LOW) #AIN1
+        GPIO.output(36,GPIO.HIGH)
+        pwmb.ChangeDutyCycle(spd)
+        pwma.ChangeDutyCycle(st)
+        if(st<10):
+            blinker_R(0,50)
+            blinker_L(0,50)
+        elif(st>10):
+            blinker_R(0,50)
+            blinker_L(1,50)
+    elif(pwr==0):
+        GPIO.output(15,GPIO.LOW) #BIN1
+        GPIO.output(13,GPIO.LOW)
+        GPIO.output(18, GPIO.LOW) #AIN2
+        GPIO.output(37,GPIO.LOW) #AIN1
+        GPIO.output(36,GPIO.LOW)
+        pwmb.ChangeDutyCycle(0)
+        pwma.ChangeDutyCycle(0)
+        blinker_L(0,50)
+        blinker_R(0,50)
+
+def reverseR(pwr,spd,st):
+    if(pwr==1):
+        GPIO.output(15,GPIO.LOW) #BIN1
+        GPIO.output(13,GPIO.HIGH)
+        GPIO.output(18, GPIO.LOW) #AIN2
+        GPIO.output(37,GPIO.HIGH) #AIN1
+        GPIO.output(36,GPIO.HIGH)
+        pwmb.ChangeDutyCycle(spd)
+        pwma.ChangeDutyCycle(st)
+        if(st<10):
+            blinker_R(0,50)
+            blinker_L(0,50)
+        elif(st>10):
+            blinker_R(1,50)
+            blinker_L(0,50)
+
+    elif(pwr==0):
+        GPIO.output(15,GPIO.LOW) #BIN1
+        GPIO.output(13,GPIO.LOW)
+        GPIO.output(18, GPIO.LOW) #AIN2
+        GPIO.output(37,GPIO.LOW) #AIN1
+        GPIO.output(36,GPIO.LOW)
+        pwmb.ChangeDutyCycle(0)
+        pwma.ChangeDutyCycle(0)
+        blinker_R(0,50)
+        blinker_L(0,50)
+####Zaplon#####
+pwr = False
+def Power(Pmode):
+	if(Pmode==0):
+		GPIO.output(22,GPIO.LOW)
+		GPIO.output(38,GPIO.LOW)
+		pwr=False
+		return pwr
+	elif(Pmode==1): 
+		GPIO.output(22,GPIO.HIGH) # STBY
+		GPIO.output(38,GPIO.HIGH)
+		pwr=True
+		return pwr
+
+
+
+app = Flask(__name__)
+app.config["ENV"] = "development"
+
+@app.route('/', methods=['GET', 'POST'])
+def control_panel():
+    #print('request.form:', request.form)
+    
+    if request.method == 'POST':
+        #przyciski
+        if request.form.get('button') == 'button-stop':
+            print("Awaryjne zatrzymanie")
+            Awaryjny_stop()
+        elif request.form.get('button') == 'button-PWR_OFF':
+            print("PWR_OFF button pressed")
+            Power(0)
+        elif request.form.get('button') == 'button-PWR_ON':
+            print("PWR_ON button pressed")
+            Power(1)
+        
+        elif request.form.get('button')== 'button-sensor':
+            Pomiar(1)
+            
+        #slidery - sterowanie pojazdem
+        elif (request.form.get('slide2') <'50' and request.form.get('slide')>'30' and Power(1)==True): #niby dziala
+            spd_N1 = int(request.form.get('slide'))
+            spd_S1 = int(request.form.get('slide2'))
+            spd_N1 = spd_N1-30
+            spd_S1 = 50-spd_S1
+            forwardL(1,spd_N1,spd_S1)
+        elif(request.form.get('slide2')<'50' and request.form.get('slide')<'30' and Power(1)==True):
+            spd_N= int(request.form.get('slide'))
+            spd_S= int(request.form.get('slide2'))
+            spd_N = 30-spd_N
+            spd_S = 50-spd_S
+            reverseL(1,spd_N,spd_S)
+        elif(request.form.get('slide2')>'50' and request.form.get('slide')>'30' and Power(1)==True):
+            spd_N= int(request.form.get('slide'))
+            spd_S = int(request.form.get('slide2'))
+            spd_N = spd_N-30
+            spd_S = spd_S-50
+            forwardR(1,spd_N,spd_S)
+        elif(request.form.get('slide2')>'50' and request.form.get('slide')<'30' and Power(1)==True):
+            spd_N= int(request.form.get('slide'))
+            spd_S = int(request.form.get('slide2'))
+            spd_N = 30-spd_N
+            spd_S = spd_S-50
+            reverseR(1,spd_N,spd_S)
+        elif(request.form.get('slide2')<'45' and Power(1)==True):
+            spd_S = int(request.form.get('slide2'))
+            spd_S = 50-spd_S
+            turnL(1,spd_S)
+        elif(request.form.get('slide2')>'55' and Power(1)==True):
+            spd_S = int(request.form.get('slide2'))
+            spd_S = spd_S-50
+            turnR(1,spd_S)
+        elif(request.form.get('slide')>'33' and request.form.get('slide2')>'45' and request.form.get('slide2')<'55' and Power(1)==True):
+            spd_N = int(request.form.get('slide'))
+            spd_N = spd_N-30
+            forward(1,spd_N)
+        elif(request.form.get('slide')<'27' and request.form.get('slide2')>'45' and request.form.get('slide2')<'55' and Power(1)==True):
+            spd_N = int(request.form.get('slide'))
+            spd_N = 30-spd_N
+            reverse(1,spd_N)
+        elif(request.form.get('slide')>'27' and request.form.get('slide')<'33' and request.form.get('slide2')<'45' and Power(1)==True):
+            forward(0,0)
+            reverse(0,0)
+        elif(request.form.get('slide')>'27' and request.form.get('slide')<'33' and request.form.get('slide2')>'55' and Power(1)==True):
+            forward(0,0)
+            reverse(0,0)
+        elif(request.form.get('slide2')>'45' and request.form.get('slide2')<'55' and Power(1)==True):
+            turnL(0,0)
+            turnR(0,0)
+    return render_template_string('''<!doctype html>
+
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<style> 
+    .slidecontainer{width: 100%;}
+    .slider{
+	  -webkit-appearance: none;
+	  width: 300px;
+	  height: 25px;
+	  background: #d3d3d3;
+	  outline: none;
+	  opacity: 0.7;
+	  -webkit-transition: .2s;
+	  transition: opacity .2s;
+	  }
+	  .slider:hover{opacity: 1;}
+	.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 25px;
+  background: #04AA6D;
+  cursor: pointer;
+}
+	.slider::-moz-range-thumb {
+  width: 15px;
+  height: 25px;
+  background: #04AA6D;
+  cursor: pointer;
+}
+	</style>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+
+    <title>Robot_Sterowanie</title>
+  </head>
+  <body>
+    <div class="container" id="control_panel_1">
+  <form action="/" method ="post" enctype="multipart/form-data" id="form">
+    <div class="row">
+            <div class="col">
+            <p><b>Naped</b></p>
+            <p><- Wsteczny | Naprzod -></p>
+            
+            <input id="slide" type="range" min="0" max="60" step="1" value="30" class="slider" name="slide">
+              <div id="sliderAmount"></div>
+              <br>
+              <p><b>Skret</b></p>
+              <p><- Lewo | Prawo -></p>
+        
+              <input id="slide2" type="range" min="0" max="99" step="1" value="50" class="slider" name="slide2">
+              <div id="sliderAmount2"></div>
+              <br><br>
+              <button class="btn btn-primary" button type="submit" name="button" value="button-sensor">Wykonaj Pomiar</button>
+              <br><br>
+              <button class="btn btn-primary" button type="submit" name="button" value="button-stop">Awaryjny STOP</button>
+              <br><br>
+              <button class="btn btn-primary" button type="submit" name="button" value="button-PWR_ON">PWR_ON</button>
+
+              <button class="btn btn-primary" button type="submit" name="button" value="button-PWR_OFF">PWR_OFF</button>
+
+              
+              
+            </div>
+    </div>
+  </form>
+
+    <!--- SCRIPTS --->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js" integrity="sha384-OgVRvuATP1z7JjHLkuOU7Xw704+h835Lr+6QL9UvYjZE3Ipu6Tp75j7Bh/kR0JKI" crossorigin="anonymous"></script>
+</body>
+<script>
+  var slide = document.getElementById('slide'),
+    sliderDiv = document.getElementById("sliderAmount");
+  
+
+slide.onchange = function() {
+    sliderDiv.innerHTML = this.value;
+    $.post({
+            url: '/',
+            data: $('form').serialize(),
+            success: function(response){
+                //alert(response);
+                // alert(response.volume);             // works with jsonify()
+                // alert(JSON.parse(response).volume); // works with json.dumps()
+                console.log(response);
+            },
+            error: function(error){
+               alert(response);
+               console.log(error);
+            }
+        });
+}
+var slide2 = document.getElementById('slide2'),
+    slider2Div = document.getElementById("sliderAmount2");
+slide2.onchange = function(){
+	slider2Div.innerHTML= this.value;
+	$.post({
+			url: '/',
+			data: $('form').serialize(),
+			success:
+			function(response2){
+			console.log(response2);
+			},
+			error: function(error2){
+               alert(response2);
+               console.log(error2);
+            }
+        });}
+
+</script>
+</html>''')
+if __name__ == '__main__':
+    app.run(debug=True, use_reloader=False,host="192.168.0.158")
+
