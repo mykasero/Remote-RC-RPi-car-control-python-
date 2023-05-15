@@ -1,3 +1,4 @@
+#Imports
 from time import sleep
 import RPi.GPIO as GPIO
 import sys
@@ -36,6 +37,8 @@ pwmLed_R.start(0)
 
 FR_x=True
 FL_x=True
+
+# Turns every GPIO pin off
 def stop():
 	GPIO.output(13,GPIO.LOW)
 	GPIO.output(15,GPIO.LOW)
@@ -49,18 +52,21 @@ def stop():
 	FL_x = False
 	FR_x = False
 
+# Function responsible for left blinker light
 def blinker_L(Mode,Led):
 	if(Mode==1):
 		pwmLed_L.ChangeDutyCycle(Led)
 	if(Mode==0 or FL_x == False):
 		pwmLed_L.ChangeDutyCycle(0)
 
+# Function responsible for right blinker light
 def blinker_R(Mode,Led):
 	if(Mode==1):
 		pwmLed_R.ChangeDutyCycle(Led)
 	if(Mode==0 or FR_x==False):
 		pwmLed_R.ChangeDutyCycle(0)
 
+# Function responsible for turning the front wheels to the right side
 def turnR(pwr,st):
 	FR_x=True
 	if(pwr==1):
@@ -74,6 +80,7 @@ def turnR(pwr,st):
 		FR_x=False
 		return FR_x
 
+# Function responsible for moving the car forward
 def forward(spd):
 	GPIO.output(15,GPIO.HIGH) #BIN1
 	GPIO.output(13,GPIO.LOW) #BIN2
@@ -81,6 +88,7 @@ def forward(spd):
 	blinker_R(0,50)
 	blinker_L(0,50)
 
+# Function responsible for moving the car forward with front wheels turned to the left
 def forwardL(pwr,spd,st):
 	FL_x=True 
 	if(pwr==1):
@@ -97,6 +105,7 @@ def forwardL(pwr,spd,st):
 		FL_x=False
 		return FL_x
 
+# Function responsible for moving the car forward with front wheels turned to the right
 def forwardR(pwr,spd,st):
 	FR_x=True
 	if(pwr==1):
@@ -113,6 +122,7 @@ def forwardR(pwr,spd,st):
 		FR_x=False
 		return FR_x
 
+# Function responsible for turning the front wheels to the left side
 def turnL(pwr,st):
 	FL_x=True
 	if(pwr==1):
@@ -124,7 +134,8 @@ def turnL(pwr,st):
 	if(pwr==0):
 		FL_x=False
 		return FL_x
-	
+
+# Function responsible for moving the car backward	
 def reverse(spd):
 	GPIO.output(15,GPIO.LOW) #BIN1
 	GPIO.output(13,GPIO.HIGH) #BIN2
@@ -133,6 +144,7 @@ def reverse(spd):
 	blinker_L(0,50)
 	blinker_R(0,50)
 
+# Function responsible for moving the car backward with front wheels turned to the right (so it moves to the left in reverse)
 def reverseL(pwr,spd,st):
 	FL_x=True
 	if(pwr==1):
@@ -151,6 +163,7 @@ def reverseL(pwr,spd,st):
 		FL_x=False
 		return FL_x
 
+# Function responsible for moving the car backward with front wheels turned to the left (so it moves to the right in reverse)
 def reverseR(pwr,spd,st):
 	FR_x=True
 	if(pwr==1):
@@ -168,6 +181,7 @@ def reverseR(pwr,spd,st):
 		FR_x=False
 		return FR_x
 
+# Function responsible for imitating the ignition like in a real car
 def Power(Pmode):
 	if(Pmode==0):
 		GPIO.output(22,GPIO.LOW)
@@ -180,6 +194,7 @@ def Power(Pmode):
 		DHTmode=True
 		return DHTmode
 
+# Function responsible for taking a humidity and temperature measurement 
 def Pomiar(DHTmode):
     if(DHTmode==1):
         wilgoc, temp = Adafruit_DHT.read(11,4)
